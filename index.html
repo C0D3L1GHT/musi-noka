@@ -10,41 +10,63 @@
             margin: 0;
             overflow: hidden;
             display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            font-family: 'Inter', sans-serif;
+            color: #fff;
         }
         canvas {
             background-color: #2a2a2a;
             border: 2px solid #fff;
             box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+            border-radius: 10px;
         }
         #message-box {
             position: absolute;
-            background-color: rgba(0, 0, 0, 0.7);
+            background-color: rgba(0, 0, 0, 0.8);
             color: #fff;
-            padding: 20px;
-            border-radius: 10px;
-            font-family: sans-serif;
+            padding: 30px;
+            border-radius: 15px;
             text-align: center;
-            display: none;
+            display: block;
             z-index: 100;
+            border: 2px solid #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+            font-size: 1.2rem;
+            max-width: 80%;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <canvas id="bouncingCanvas"></canvas>
-    <div id="message-box"></div>
+    <div id="message-box">Click to Start</div>
 
     <script>
-        //TODO: get walls generating randomly
-        //TODO: add Names for the balls
-        //TODO: add music and sound fx
         // Get the canvas element and its 2D rendering context
         const canvas = document.getElementById('bouncingCanvas');
         const ctx = canvas.getContext('2d');
         const messageBox = document.getElementById('message-box');
-        let gameActive = true;
+        
+        let gameActive = false;
+        let animationFrameId = null;
+        let balls = [];
+
+        // Load the collision sound effect
+        const collisionSound = new Audio('https://cdn.jsdelivr.net/gh/johannes-t-keller/sound-effects@main/audio/glass_002.ogg');
+        collisionSound.volume = 0.5;
+
+        // Function to play the sound effect
+        function playCollisionSound() {
+            if (collisionSound.paused) {
+                collisionSound.play().catch(e => console.error("Audio play failed:", e));
+            } else {
+                const soundClone = collisionSound.cloneNode();
+                soundClone.play().catch(e => console.error("Audio play failed:", e));
+            }
+        }
 
         // Set the canvas size to the window dimensions for a full-screen effect
         function resizeCanvas() {
@@ -55,42 +77,34 @@
         window.addEventListener('resize', resizeCanvas);
 
         // --- Ball Class ---
-        // A blueprint for each bouncing ball
         class Ball {
-            constructor(x, y, radius, color) {
+            constructor(x, y, radius, color, speed) {
                 this.x = x;
                 this.y = y;
                 this.radius = radius;
                 this.color = color;
-                // Give each ball a random initial velocity
-                this.vx = (Math.random() - 0.5) * 5;
-                this.vy = (Math.random() - 0.5) * 5;
+                const angle = Math.random() * 2 * Math.PI;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
             }
 
-            // Method to draw the ball on the canvas
             draw() {
-                // Draw the main ball body
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
                 ctx.fillStyle = this.color;
                 ctx.fill();
                 ctx.closePath();
-
-                // Draw the eyes and pupils
                 this.drawEyes();
             }
 
-            // Method to draw eyeballs on the ball
             drawEyes() {
                 const eyeRadius = this.radius * 0.2;
                 const pupilRadius = this.radius * 0.1;
 
-                // Determine eye positions relative to the ball's center
                 const eye1X = this.x - this.radius * 0.4;
                 const eye2X = this.x + this.radius * 0.4;
                 const eyeY = this.y;
 
-                // Determine pupil offset based on velocity
                 const eyeDirectionX = this.vx / Math.sqrt(this.vx * this.vx + this.vy * this.vy);
                 const eyeDirectionY = this.vy / Math.sqrt(this.vx * this.vx + this.vy * this.vy);
                 const pupilOffset = eyeRadius * 0.5;
@@ -98,7 +112,6 @@
                 const pupil2X = eye2X + eyeDirectionX * pupilOffset;
                 const pupilY = eyeY + eyeDirectionY * pupilOffset;
                 
-                // Draw eyes
                 ctx.beginPath();
                 ctx.arc(eye1X, eyeY, eyeRadius, 0, Math.PI * 2);
                 ctx.arc(eye2X, eyeY, eyeRadius, 0, Math.PI * 2);
@@ -106,7 +119,6 @@
                 ctx.fill();
                 ctx.closePath();
 
-                // Draw pupils
                 ctx.beginPath();
                 ctx.arc(pupil1X, pupilY, pupilRadius, 0, Math.PI * 2);
                 ctx.arc(pupil2X, pupilY, pupilRadius, 0, Math.PI * 2);
@@ -115,48 +127,39 @@
                 ctx.closePath();
             }
 
-            // Method to update the ball's position
             update() {
                 this.x += this.vx;
                 this.y += this.vy;
             }
 
-            // Method to check for collision with the canvas walls
             checkWallCollision() {
-                // Bounce off the left/right walls
                 if (this.x - this.radius <= 0 || this.x + this.radius >= canvas.width) {
                     this.vx *= -1;
+                    playCollisionSound();
                 }
-                // Bounce off the top/bottom walls
                 if (this.y - this.radius <= 0 || this.y + this.radius >= canvas.height) {
                     this.vy *= -1;
+                    playCollisionSound();
                 }
             }
 
-            // Method to check for collision with another ball
             checkBallCollision(otherBall) {
-                // Calculate the distance between the two ball centers
                 const dx = otherBall.x - this.x;
                 const dy = otherBall.y - this.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 const combinedRadius = this.radius + otherBall.radius;
 
-                // If the distance is less than the sum of their radii, they are colliding
                 if (distance < combinedRadius) {
-                    // Calculate the overlap
+                    playCollisionSound();
                     const overlap = combinedRadius - distance;
-
-                    // Normalize the collision vector
                     const normalX = dx / distance;
                     const normalY = dy / distance;
 
-                    // Move the balls apart to resolve the overlap
                     this.x -= normalX * (overlap / 2);
                     this.y -= normalY * (overlap / 2);
                     otherBall.x += normalX * (overlap / 2);
                     otherBall.y += normalY * (overlap / 2);
 
-                    // Simple velocity reversal to make them bounce off each other
                     this.vx *= -1;
                     this.vy *= -1;
                     otherBall.vx *= -1;
@@ -164,9 +167,7 @@
                 }
             }
 
-            // Method to check for collision with a wall object
             checkWallCollisionWithObject(wall) {
-                // Determine the closest point on the wall to the center of the ball
                 let testX = this.x;
                 let testY = this.y;
 
@@ -182,23 +183,19 @@
                     testY = wall.y + wall.height;
                 }
 
-                // Calculate the distance from the closest point to the ball's center
                 let distX = this.x - testX;
                 let distY = this.y - testY;
                 let distance = Math.sqrt((distX * distX) + (distY * distY));
 
-                // If the distance is less than the ball's radius, there is a collision
                 if (distance <= this.radius) {
-                    // Calculate the overlap
+                    playCollisionSound();
                     const overlap = this.radius - distance;
                     const pushX = distX / distance;
                     const pushY = distY / distance;
 
-                    // Move the ball out of the wall
                     this.x += pushX * overlap;
                     this.y += pushY * overlap;
 
-                    // Reverse velocity based on the closest axis of collision
                     if (Math.abs(distX) > Math.abs(distY)) {
                         this.vx *= -1;
                     } else {
@@ -209,132 +206,112 @@
         }
 
         // --- Game Initialization ---
-        const balls = [];
         const numBalls = 6;
         const colors = ['#FF0000', '#0000FF', '#FFFFFF', '#000000', '#FFFF00', '#008000'];
-        const colorNames = ["loje", "laso", "pimeja", "walo", "jelo", "laso"];
+        const initialSpeed = 1.5;
 
-        // Define the walls to create a path
-        const walls = [
-            // Top horizontal wall
-            { x: 150, y: 150, width: 250, height: 20 },
-            // Left vertical wall
-            { x: 150, y: 150, width: 20, height: 400 },
-            // Right vertical wall
-            { x: 400, y: 150, width: 20, height: 400 },
-            // Middle horizontal wall
-            { x: 150, y: 550, width: 200, height: 20 },
+        // Default walls to start with
+        let walls = [
+            { x: 100, y: 100, width: 250, height: 20 },
+            { x: 450, y: 100, width: 250, height: 20 },
+            { x: 100, y: 100, width: 20, height: 250 },
+            { x: 680, y: 100, width: 20, height: 250 },
+            { x: 350, y: 100, width: 20, height: 200 },
+            { x: 350, y: 300, width: 200, height: 20 },
+            { x: 550, y: 300, width: 20, height: 200 },
+            { x: 350, y: 500, width: 200, height: 20 },
+            { x: 350, y: 500, width: 20, height: 200 },
+            { x: 350, y: 680, width: 200, height: 20 }
         ];
-        
-        // Define the goal
-        const goal = {
-            x: canvas.width - 150,
-            y: canvas.height - 150,
+
+        let goal = {
+            x: 0,
+            y: 0,
             width: 100,
-            height: 100,
+            height: 100
         };
-
-        // Helper function to check for initial collision with objects
-        function checkInitialCollision(x, y, radius, objects) {
-            for (const object of objects) {
-                let testX = x;
-                let testY = y;
-
-                if (x < object.x) {
-                    testX = object.x;
-                } else if (x > object.x + object.width) {
-                    testX = object.x + object.width;
-                }
-
-                if (y < object.y) {
-                    testY = object.y;
-                } else if (y > object.y + object.height) {
-                    testY = object.y + object.height;
-                }
-
-                let distX = x - testX;
-                let distY = y - testY;
-                let distance = Math.sqrt((distX * distX) + (distY * distY));
-
-                if (distance <= radius) {
-                    return true; // Collision detected
-                }
+        
+        function resetBalls() {
+            balls = [];
+            const radius = 15;
+            const startX = 50;
+            const startY = 50;
+            for (let i = 0; i < numBalls; i++) {
+                balls.push(new Ball(startX, startY, radius, colors[i % colors.length], initialSpeed));
             }
-            return false; // No collision
         }
         
-        // Create a number of balls at the starting position
-        const radius = 15; // The radius of the balls is now smaller
-        const startX = 60;
-        const startY = 60;
-        for (let i = 0; i < numBalls; i++) {
-            balls.push(new Ball(startX, startY, radius, colors[i % colors.length]));
+        function setGoalPosition() {
+            goal.x = canvas.width - 150;
+            goal.y = canvas.height - 150;
         }
 
         // --- Game Loop ---
         function gameLoop() {
-            // Only continue the loop if the game is active
             if (!gameActive) {
                 return;
             }
-
-            // Clear the canvas on each frame
+            
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // Draw the walls
             ctx.fillStyle = '#8c8c8c';
             walls.forEach(wall => {
                 ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
             });
 
-            // Draw the goal
-            ctx.fillStyle = '#00aa00'; // Green color for the goal
+            ctx.fillStyle = '#00aa00';
             ctx.fillRect(goal.x, goal.y, goal.width, goal.height);
 
-            // Update each ball's position and check for collisions
             for (let i = 0; i < balls.length; i++) {
                 const ball = balls[i];
-                let color = colorNames[i];
                 ball.update();
-                ball.checkWallCollision(); // Check against canvas borders
+                ball.checkWallCollision();
                 
-                // Check against each custom wall
                 walls.forEach(wall => {
                     ball.checkWallCollisionWithObject(wall);
                 });
 
-                // Check for collision with the goal
                 if (ball.x + ball.radius > goal.x &&
                     ball.x - ball.radius < goal.x + goal.width &&
                     ball.y + ball.radius > goal.y &&
                     ball.y - ball.radius < goal.y + goal.height) {
                     
-                    // Ball has reached the goal, stop the game and display a message
                     gameActive = false;
-                    messageBox.innerText = `musi li pini a!!! sike ${color} li sike nanpa wan!`;
+                    messageBox.innerText = 'Game Over! A ball has reached the goal!';
                     messageBox.style.display = 'block';
-                    return; // Exit the function to stop the loop
+                    return;
                 }
             }
 
-            // Check for collisions between every pair of balls
             for (let i = 0; i < balls.length; i++) {
                 for (let j = i + 1; j < balls.length; j++) {
                     balls[i].checkBallCollision(balls[j]);
                 }
             }
 
-            // Draw all the balls
             for (let i = 0; i < balls.length; i++) {
                 balls[i].draw();
             }
 
-            // Request the next animation frame
-            requestAnimationFrame(gameLoop);
+            animationFrameId = requestAnimationFrame(gameLoop);
         }
 
-        // Start the game loop
-        gameLoop();
+        // --- Event Listener to Start Game on Click ---
+        canvas.addEventListener('click', startGame, { once: true });
+        messageBox.addEventListener('click', startGame, { once: true });
+        
+        function startGame() {
+            gameActive = true;
+            messageBox.style.display = 'none';
+            resetBalls();
+            gameLoop();
+        }
+
+        // Initial setup
+        window.onload = function() {
+            setGoalPosition();
+        };
+
     </script>
 </body>
 </html>
