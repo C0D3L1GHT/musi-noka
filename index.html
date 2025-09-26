@@ -213,7 +213,7 @@
         // --- Maze Generation and Game Initialization ---
         const numBalls = 6;
         const colors = ['#FF0000', '#0000FF', '#FFFFFF', '#000000', '#FFFF00', '#008000'];
-        const initialSpeed = 5;
+        const initialSpeed = 2;
         const STUCK_FRAMES_THRESHOLD = 60 * 10; // 10 seconds at 60 FPS
 
         const WALL_THICKNESS = 10;
@@ -421,12 +421,14 @@
                 
                 if (ball.stuckXFrames > STUCK_FRAMES_THRESHOLD) {
                     ball.y += (Math.random() > 0.5 ? 10 : -10); // Teleport up or down
+                    ball.vy = (Math.random() > 0.5 ? 1 : -1);
                     ball.stuckXFrames = 0;
                     ball.stuckYFrames = 0;
                 }
 
                 if (ball.stuckYFrames > STUCK_FRAMES_THRESHOLD) {
                     ball.x += (Math.random() > 0.5 ? 10 : -10); // Teleport left or right
+                    ball.vx = (Math.random() > 0.5 ? 1 : -1);
                     ball.stuckXFrames = 0;
                     ball.stuckYFrames = 0;
                 }
