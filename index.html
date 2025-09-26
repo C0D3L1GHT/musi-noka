@@ -53,6 +53,8 @@
         let gameActive = false;
         let animationFrameId = null;
         let balls = [];
+        let walls = [];
+        let goal = {};
 
         // Load the collision sound effect
         const collisionSound = new Audio('https://cdn.jsdelivr.net/gh/johannes-t-keller/sound-effects@main/audio/glass_002.ogg');
@@ -86,6 +88,9 @@
                 const angle = Math.random() * 2 * Math.PI;
                 this.vx = Math.cos(angle) * speed;
                 this.vy = Math.sin(angle) * speed;
+                // Add properties to track how long the ball has been moving in one direction
+                this.stuckXFrames = 0;
+                this.stuckYFrames = 0;
             }
 
             draw() {
@@ -205,32 +210,168 @@
             }
         }
 
-        // --- Game Initialization ---
+        // --- Maze Generation and Game Initialization ---
         const numBalls = 6;
         const colors = ['#FF0000', '#0000FF', '#FFFFFF', '#000000', '#FFFF00', '#008000'];
-        const initialSpeed = 1.5;
+        const initialSpeed = 5;
+        const STUCK_FRAMES_THRESHOLD = 60 * 10; // 10 seconds at 60 FPS
 
-        // Default walls to start with
-        let walls = [
-            { x: 100, y: 100, width: 250, height: 20 },
-            { x: 450, y: 100, width: 250, height: 20 },
-            { x: 100, y: 100, width: 20, height: 250 },
-            { x: 680, y: 100, width: 20, height: 250 },
-            { x: 350, y: 100, width: 20, height: 200 },
-            { x: 350, y: 300, width: 200, height: 20 },
-            { x: 550, y: 300, width: 20, height: 200 },
-            { x: 350, y: 500, width: 200, height: 20 },
-            { x: 350, y: 500, width: 20, height: 200 },
-            { x: 350, y: 680, width: 200, height: 20 }
-        ];
+        const WALL_THICKNESS = 10;
+        const CELL_SIZE = 50;
 
-        let goal = {
-            x: 0,
-            y: 0,
-            width: 100,
-            height: 100
-        };
-        
+        function generateMaze() {
+            walls = [];
+            const mazeCols = Math.floor(canvas.width / CELL_SIZE) - 1;
+            const mazeRows = Math.floor(canvas.height / CELL_SIZE) - 1;
+
+            const grid = Array.from({ length: mazeRows }, () => Array(mazeCols).fill(false));
+            const wallList = [];
+            const allWalls = [];
+
+            // Initialize all walls
+            for (let r = 0; r < mazeRows; r++) {
+                for (let c = 0; c < mazeCols; c++) {
+                    if (r < mazeRows - 1) {
+                        allWalls.push({
+                            x1: (c + 1) * CELL_SIZE, y1: (r + 1) * CELL_SIZE,
+                            x2: (c + 1) * CELL_SIZE, y2: (r + 2) * CELL_SIZE,
+                            type: 'vertical'
+                        });
+                    }
+                    if (c < mazeCols - 1) {
+                        allWalls.push({
+                            x1: (c + 1) * CELL_SIZE, y1: (r + 1) * CELL_SIZE,
+                            x2: (c + 2) * CELL_SIZE, y2: (r + 1) * CELL_SIZE,
+                            type: 'horizontal'
+                        });
+                    }
+                }
+            }
+
+            // Prim's algorithm
+            let startRow = 0;
+            let startCol = 0;
+            grid[startRow][startCol] = true;
+
+            const addWalls = (r, c) => {
+                if (r > 0 && !grid[r - 1][c]) wallList.push({ r: r - 1, c: c, fromR: r, fromC: c, type: 'top' });
+                if (r < mazeRows - 1 && !grid[r + 1][c]) wallList.push({ r: r + 1, c: c, fromR: r, fromC: c, type: 'bottom' });
+                if (c > 0 && !grid[r][c - 1]) wallList.push({ r: r, c: c - 1, fromR: r, fromC: c, type: 'left' });
+                if (c < mazeCols - 1 && !grid[r][c + 1]) wallList.push({ r: r, c: c + 1, fromR: r, fromC: c, type: 'right' });
+            };
+            addWalls(startRow, startCol);
+
+            while (wallList.length > 0) {
+                const randomIndex = Math.floor(Math.random() * wallList.length);
+                const wall = wallList[randomIndex];
+                wallList.splice(randomIndex, 1);
+
+                if (!grid[wall.r][wall.c]) {
+                    grid[wall.r][wall.c] = true;
+                    // Remove the wall from allWalls
+                    let wallToRemove = null;
+                    if (wall.type === 'top') {
+                        wallToRemove = allWalls.find(w => w.x1 === (wall.c + 1) * CELL_SIZE && w.y1 === (wall.r + 2) * CELL_SIZE && w.type === 'horizontal');
+                    } else if (wall.type === 'bottom') {
+                        wallToRemove = allWalls.find(w => w.x1 === (wall.c + 1) * CELL_SIZE && w.y1 === (wall.r + 1) * CELL_SIZE && w.type === 'horizontal');
+                    } else if (wall.type === 'left') {
+                        wallToRemove = allWalls.find(w => w.x1 === (wall.c + 1) * CELL_SIZE && w.y1 === (wall.r + 1) * CELL_SIZE && w.type === 'vertical');
+                    } else if (wall.type === 'right') {
+                        wallToRemove = allWalls.find(w => w.x1 === (wall.c + 1) * CELL_SIZE && w.y1 === (wall.r + 1) * CELL_SIZE && w.type === 'vertical');
+                    }
+                    if (wallToRemove) {
+                        const index = allWalls.indexOf(wallToRemove);
+                        if (index > -1) {
+                            allWalls.splice(index, 1);
+                        }
+                    }
+                    addWalls(wall.r, wall.c);
+                }
+            }
+
+            walls = allWalls.map(w => {
+                let x = Math.min(w.x1, w.x2);
+                let y = Math.min(w.y1, w.y2);
+                let width = w.type === 'horizontal' ? Math.abs(w.x2 - w.x1) : WALL_THICKNESS;
+                let height = w.type === 'vertical' ? Math.abs(w.y2 - w.y1) : WALL_THICKNESS;
+                return { x, y, width, height };
+            });
+
+            // Remove half of the remaining walls
+            const numToRemove = Math.floor(walls.length / 2);
+            for (let i = 0; i < numToRemove; i++) {
+                const randomIndex = Math.floor(Math.random() * walls.length);
+                walls.splice(randomIndex, 1);
+            }
+            
+            // Add outer border walls
+            walls.push(
+                { x: 0, y: 0, width: canvas.width, height: WALL_THICKNESS },
+                { x: 0, y: canvas.height - WALL_THICKNESS, width: canvas.width, height: WALL_THICKNESS },
+                { x: 0, y: 0, width: WALL_THICKNESS, height: canvas.height },
+                { x: canvas.width - WALL_THICKNESS, y: 0, width: WALL_THICKNESS, height: canvas.height }
+            );
+
+            // Ensure the top-left corner is clear
+            walls = walls.filter(wall => {
+                const startArea = { x: 0, y: 0, width: CELL_SIZE * 2, height: CELL_SIZE * 2 };
+                return !(wall.x < startArea.x + startArea.width &&
+                         wall.x + wall.width > startArea.x &&
+                         wall.y < startArea.y + startArea.height &&
+                         wall.y + wall.height > startArea.y);
+            });
+
+            setGoalPosition();
+        }
+
+        function setGoalPosition() {
+            const goalSize = 50;
+            const positions = [
+                'center', 'topRight', 'bottomLeft', 'bottomRight'
+            ];
+            const randomPos = positions[Math.floor(Math.random() * positions.length)];
+
+            if (randomPos === 'topRight') {
+                goal.x = canvas.width - goalSize - 10;
+                goal.y = 10;
+            } else if (randomPos === 'bottomLeft') {
+                goal.x = 10;
+                goal.y = canvas.height - goalSize - 10;
+            } else if (randomPos === 'bottomRight') {
+                goal.x = canvas.width - goalSize - 10;
+                goal.y = canvas.height - goalSize - 10;
+            } else { // center
+                goal.x = canvas.width / 2 - goalSize / 2;
+                goal.y = canvas.height / 2 - goalSize / 2;
+            }
+
+            goal.width = goalSize;
+            goal.height = goalSize;
+
+            const goalCenter = { x: goal.x + goal.width / 2, y: goal.y + goal.height / 2 };
+
+            let adjacentWalls = [];
+            walls = walls.filter(wall => {
+                const wallCenter = { x: wall.x + wall.width / 2, y: wall.y + wall.height / 2 };
+                const dx = Math.abs(goalCenter.x - wallCenter.x);
+                const dy = Math.abs(goalCenter.y - wallCenter.y);
+                const isAdjacent = dx <= (goal.width / 2 + wall.width / 2) + 20 && dy <= (goal.height / 2 + wall.height / 2) + 20;
+
+                if (isAdjacent) {
+                    adjacentWalls.push(wall);
+                    return false;
+                }
+                return true;
+            });
+
+            while (adjacentWalls.length > 2) {
+                const randomIndex = Math.floor(Math.random() * adjacentWalls.length);
+                adjacentWalls.splice(randomIndex, 1);
+            }
+
+            walls.push(...adjacentWalls);
+        }
+
         function resetBalls() {
             balls = [];
             const radius = 15;
@@ -241,11 +382,6 @@
             }
         }
         
-        function setGoalPosition() {
-            goal.x = canvas.width - 150;
-            goal.y = canvas.height - 150;
-        }
-
         // --- Game Loop ---
         function gameLoop() {
             if (!gameActive) {
@@ -270,6 +406,30 @@
                 walls.forEach(wall => {
                     ball.checkWallCollisionWithObject(wall);
                 });
+
+                // Stuck detection and teleportation logic
+                if (Math.abs(ball.vy) < 0.1) { // Check if moving mostly horizontally
+                    ball.stuckXFrames++;
+                    ball.stuckYFrames = 0;
+                } else if (Math.abs(ball.vx) < 0.1) { // Check if moving mostly vertically
+                    ball.stuckYFrames++;
+                    ball.stuckXFrames = 0;
+                } else {
+                    ball.stuckXFrames = 0;
+                    ball.stuckYFrames = 0;
+                }
+                
+                if (ball.stuckXFrames > STUCK_FRAMES_THRESHOLD) {
+                    ball.y += (Math.random() > 0.5 ? 10 : -10); // Teleport up or down
+                    ball.stuckXFrames = 0;
+                    ball.stuckYFrames = 0;
+                }
+
+                if (ball.stuckYFrames > STUCK_FRAMES_THRESHOLD) {
+                    ball.x += (Math.random() > 0.5 ? 10 : -10); // Teleport left or right
+                    ball.stuckXFrames = 0;
+                    ball.stuckYFrames = 0;
+                }
 
                 if (ball.x + ball.radius > goal.x &&
                     ball.x - ball.radius < goal.x + goal.width &&
@@ -303,16 +463,16 @@
         function startGame() {
             gameActive = true;
             messageBox.style.display = 'none';
+            generateMaze();
             resetBalls();
             gameLoop();
         }
 
         // Initial setup
         window.onload = function() {
-            setGoalPosition();
+            // No need to call setGoalPosition here, it's called inside generateMaze
         };
 
     </script>
 </body>
 </html>
-
